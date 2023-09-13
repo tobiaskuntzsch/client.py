@@ -2,8 +2,8 @@ from typing import Any
 
 import pytest
 
-from deebot_client.commands.json import GetLifeSpan
-from deebot_client.events import LifeSpan, LifeSpanEvent
+from deebot_client.commands.json import GetLifeSpan, GetGoatLifeSpan
+from deebot_client.events import LifeSpan, LifeSpanEvent, GoatLifeSpan, GoatLifeSpanEvent
 from tests.helpers import get_request_json
 
 from . import assert_command
@@ -28,5 +28,29 @@ from . import assert_command
         ),
     ],
 )
+
 async def test_GetLifeSpan(json: dict[str, Any], expected: list[LifeSpanEvent]) -> None:
     await assert_command(GetLifeSpan(), json, expected)
+
+@pytest.mark.parametrize(
+    "json, expected",
+    [
+        (
+            get_request_json(
+                [
+                    {"type": "blade", "left": 1000, "total": 1000,"sn":""},
+                    {"type": "lensBrush", "left": 1000, "total": 1000,"sn":""},
+                    {"type": "uwbCell", "left": 1000, "total": 1000,"sn":"3Cxxx"},
+                ]
+            ),
+            [
+                GoatLifeSpanEvent(GoatLifeSpan.BLADE, 100.00, 1000,""),
+                GoatLifeSpanEvent(GoatLifeSpan.LENSBRUSH, 100.00, 1000,""),
+                GoatLifeSpanEvent(GoatLifeSpan.UWBCELL, 100.00, 1000,"3Cxxx"),
+            ],
+        ),
+    ],
+)
+
+async def test_GetGoatLifeSpan(json: dict[str, Any], expected: list[GoatLifeSpanEvent]) -> None:
+    await assert_command(GetGoatLifeSpan(), json, expected)

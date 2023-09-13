@@ -4,23 +4,30 @@ import json
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
-from typing import Any, Final
+from typing import Any, Final,TypeVar
 
 from deebot_client.commands.json.battery import GetBattery
+from deebot_client.commands.json.life_span import GetGoatLifeSpan
+
 from deebot_client.mqtt_client import MqttClient, SubscriberInfo
 
 from .authentication import Authenticator
 from .command import Command
 from .events import (
+    Event,
     AvailabilityEvent,
     CleanLogEvent,
     CustomCommandEvent,
     LifeSpanEvent,
+    GoatLifeSpanEvent,
+    GoatLifeSpan,
     PositionsEvent,
     PositionType,
     StateEvent,
+    StateEventV2,
     StatsEvent,
     TotalStatsEvent,
+    NewUWBCellEvent,
 )
 from .events.event_bus import EventBus
 from .logging_filter import get_logger
@@ -31,6 +38,7 @@ from .models import DeviceInfo, VacuumState
 _LOGGER = get_logger(__name__)
 _AVAILABLE_CHECK_INTERVAL = 60
 
+T = TypeVar("T", bound=Event)
 
 class VacuumBot:
     """Vacuum bot representation."""
@@ -41,21 +49,54 @@ class VacuumBot:
         authenticator: Authenticator,
     ):
         self.device_info: Final[DeviceInfo] = device_info
+        
         self._authenticator = authenticator
 
         self._semaphore = asyncio.Semaphore(3)
-        self._state: StateEvent | None = None
+        
         self._last_time_available: datetime = datetime.now()
         self._available_task: asyncio.Task | None = None
         self._unsubscribe: Callable[[], None] | None = None
+        self._state:  StateEvent | None = None
 
         self.fw_version: str | None = None
         self.events: Final[EventBus] = EventBus(self.execute_command)
 
         self.map: Final[Map] = Map(self.execute_command, self.events)
 
+        self.uwbCells = []
+        self.is_goat = (device_info.device_name == "GOAT")
+        self._state_event_type: StateEvent | None = None
+        self._life_span_event_type: LifeSpanEvent | None = None
+        self._on_pos_refresh_event: StateEvent(VacuumState.DOCKED)  | None = None
+        
+        if self.is_goat:
+            self._state_event_type: StateEventV2 | None = None
+            self._life_span_event_type: GoatLifeSpanEvent | None = None
+            self._on_pos_refresh_event: StateEventV2(VacuumState.DOCKED)  | None = None
+            self._state:  StateEventV2 | None = None
+
+            async def on_uwbcell_event(event: GoatLifeSpanEvent) -> None:
+                if event.type == GoatLifeSpan.UWBCELL:
+                    if not event.sn in self.uwbCells:
+                        self.uwbCells.append(event.sn)
+                        self.events.notify(NewUWBCellEvent(event.sn))
+                        
+            self.events.subscribe(GoatLifeSpanEvent, on_uwbcell_event)
+            
+            asyncio.create_task(self._uwbCell_task_worker())
+
+
+        async def on_state(event: self._state) -> None:
+            if event.state == StateEvent:
+                self.events.request_refresh(CleanLogEvent)
+                self.events.request_refresh(TotalStatsEvent)
+
+        self.events.subscribe(self._state, on_state)
+        
         async def on_pos(event: PositionsEvent) -> None:
-            if self._state == StateEvent(VacuumState.DOCKED):
+
+            if self._state == self._on_pos_refresh_event:
                 return
 
             deebot = next(p for p in event.positions if p.type == PositionType.DEEBOT)
@@ -69,31 +110,33 @@ class VacuumBot:
                 )
                 if on_charger:
                     # deebot on charger so the status should be docked... Checking
-                    self.events.request_refresh(StateEvent)
-
-        self.events.subscribe(PositionsEvent, on_pos)
-
-        async def on_state(event: StateEvent) -> None:
-            if event.state == VacuumState.DOCKED:
-                self.events.request_refresh(CleanLogEvent)
-                self.events.request_refresh(TotalStatsEvent)
-
-        self.events.subscribe(StateEvent, on_state)
+                    self.events.request_refresh(self._on_pos_refresh_event) 
+                         
+        self.events.subscribe(PositionsEvent, on_pos) 
 
         async def on_stats(_: StatsEvent) -> None:
-            self.events.request_refresh(LifeSpanEvent)
+            self.events.request_refresh(self._life_span_event_type)
 
-        self.events.subscribe(StatsEvent, on_stats)
+        self.events.subscribe(StatsEvent, on_stats)       
 
         async def on_custom_command(event: CustomCommandEvent) -> None:
             self._handle_message(event.name, event.response)
 
         self.events.subscribe(CustomCommandEvent, on_custom_command)
 
+    async def _uwbCell_task_worker(self) -> None:
+        try:
+            await self._execute_command(GetGoatLifeSpan())
+        except Exception:  # pylint: disable=broad-exception-caught
+            _LOGGER.debug(
+                "An exception occurred during uwbCell load",
+                exc_info=True,
+            )
+
     async def execute_command(self, command: Command) -> None:
         """Execute given command."""
         await self._execute_command(command)
-
+       
     async def initialize(self, client: MqttClient) -> None:
         """Initialize vacumm bot, which includes MQTT-subscription and starting the available check."""
         if self._unsubscribe is None:
@@ -118,6 +161,7 @@ class VacuumBot:
         await self.map.teardown()
 
     async def _available_task_worker(self) -> None:
+
         while True:
             if (datetime.now() - self._last_time_available).total_seconds() > (
                 _AVAILABLE_CHECK_INTERVAL - 1
@@ -130,6 +174,7 @@ class VacuumBot:
                         "An exception occurred during the available check",
                         exc_info=True,
                     )
+
             await asyncio.sleep(_AVAILABLE_CHECK_INTERVAL)
 
     async def _execute_command(self, command: Command) -> bool:

@@ -2,7 +2,7 @@
 from typing import Any
 
 from deebot_client.command import CommandMqttP2P
-from deebot_client.events import LifeSpan, LifeSpanEvent
+from deebot_client.events import LifeSpan, LifeSpanEvent, GoatLifeSpan, GoatLifeSpanEvent
 from deebot_client.message import HandlingResult, HandlingState, MessageBodyDataList
 
 from .common import CommandWithMessageHandling, EventBus, ExecuteCommand
@@ -36,7 +36,35 @@ class GetLifeSpan(CommandWithMessageHandling, MessageBodyDataList):
 
         return HandlingResult.success()
 
+class GetGoatLifeSpan(CommandWithMessageHandling, MessageBodyDataList):
+    """Get life span command."""
 
+    name = "getLifeSpan"
+
+    def __init__(self) -> None:
+        args = [life_span.value for life_span in GoatLifeSpan]
+        super().__init__(args)
+
+    @classmethod
+    def _handle_body_data_list(cls, event_bus: EventBus, data: list) -> HandlingResult:
+        """Handle message->body->data and notify the correct event subscribers.
+
+        :return: A message response
+        """
+        for component in data:
+            component_type = GoatLifeSpan(component["type"])
+            left = int(component["left"])
+            total = int(component["total"])
+            sn = str(component.get("sn",None))
+            
+            if total <= 0:
+                raise ValueError("total not positive!")
+
+            percent = round((left / total) * 100, 2)
+
+            event_bus.notify(GoatLifeSpanEvent(component_type, percent, left,sn))
+
+        return HandlingResult.success()
 class ResetLifeSpan(ExecuteCommand, CommandMqttP2P):
     """Reset life span command."""
 

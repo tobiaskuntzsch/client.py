@@ -20,7 +20,7 @@ from .map import (
     PositionType,
 )
 from .water_info import WaterAmount, WaterInfoEvent
-
+from .wifi_info import WifiInfoEvent
 
 @dataclass(frozen=True)
 class BatteryEvent(Event):
@@ -91,6 +91,20 @@ class LifeSpan(str, Enum):
     FILTER = "heap"
 
 
+@unique
+class GoatLifeSpan(str, Enum):
+    """Enum class for all possible life span components."""
+
+    BLADE = "blade"
+    LENSBRUSH = "lensBrush"
+    UWBCELL = "uwbCell"
+
+
+@dataclass(frozen=True)
+class NewUWBCellEvent(Event):
+    """New cell event representation."""
+    sn: str
+
 @dataclass(frozen=True)
 class LifeSpanEvent(Event):
     """Life span event representation."""
@@ -99,6 +113,14 @@ class LifeSpanEvent(Event):
     percent: float
     remaining: int  # in minutes
 
+@dataclass(frozen=True)
+class GoatLifeSpanEvent(Event):
+    """GoatLifeSpan span event representation."""
+
+    type: GoatLifeSpan
+    percent: float
+    remaining: int  # in minutes  
+    sn: str | None  
 
 @dataclass(frozen=True)
 class RoomsEvent(Event):
@@ -147,6 +169,11 @@ class StateEvent(Event):
 
     state: VacuumState
 
+@dataclass(frozen=True)
+class StateEventV2(Event):
+    """State event representation."""
+
+    state: VacuumState
 
 @dataclass(frozen=True)
 class VolumeEvent(Event):
@@ -191,3 +218,90 @@ class MultimapStateEvent(EnableEvent):
 @dataclass(frozen=True)
 class TrueDetectEvent(EnableEvent):
     """TrueDetect event."""
+
+
+@dataclass(frozen=True)
+class ObstacleHeightEvent(Event):
+    """Obstacle height event representation."""
+
+    # None means no data available
+    level: int | None
+
+@dataclass(frozen=True)
+class CutDirectionEvent(Event):
+    """Cut direction  event representation."""
+
+    # None means no data available
+    angle: int | None
+
+@dataclass(frozen=True)
+class ProtectStateEvent(Event):
+    """Protect state event representation."""
+
+    # None means no data available
+    is_anim_protect: bool | None
+    is_e_stop: bool | None
+    is_locked: bool | None
+    is_rain_delay: bool | None
+    is_rain_protect: bool | None
+
+@dataclass(frozen=True)
+class AnimProtectEvent(Event):
+    """Animal protect event representation."""
+
+    # None means no data available
+    enable: bool
+    start: str | None
+    end: str | None
+
+
+@dataclass(frozen=True)
+class RainDelayEvent(Event):
+    """Rain delay event representation."""
+
+    # None means no data available
+    enable: bool
+    delay: int | None
+
+
+@dataclass(frozen=True)
+class SafeProtectEvent(Event):
+    """Safe protect event representation."""
+
+    # None means no data available
+    enable: bool
+
+@dataclass(frozen=True)
+class BorderSwitchEvent(Event):
+    """Border switch event representation."""
+
+    # None means no data available
+    enable: bool
+
+@dataclass(frozen=True)
+class RecognizationEvent(Event):
+    """Recognization event representation."""
+
+    # None means no data available
+    enable: bool
+
+@dataclass(frozen=True)
+class ChildLockEvent(Event):
+    """Child lock event representation."""
+
+    # None means no data available
+    enable: bool
+
+@dataclass(frozen=True)
+class MoveupWarningEvent(Event):
+    """Moveup warning event representation."""
+
+    # None means no data available
+    enable: bool
+
+@dataclass(frozen=True)
+class CrossMapBorderWarningEvent(Event):
+    """Cross map border warning event representation."""
+
+    # None means no data available
+    enable: bool
